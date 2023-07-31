@@ -19,13 +19,9 @@ namespace TestingWindow
         /// </summary>
         Delayed,
         /// <summary>
-        /// Works with enums with [Flags] attribute
-        /// </summary>
-        Flags,      //Enum
-        /// <summary>
         /// Works with strings
         /// </summary>
-        TextArea    //String
+        TextArea
     }
 
     [AttributeUsage(AttributeTargets.Method)]
@@ -43,7 +39,6 @@ namespace TestingWindow
             DelayedText,
             Double,
             EnumFlags,
-            EnumMask,
             Float,
             Gradient,
             Int,
@@ -57,7 +52,8 @@ namespace TestingWindow
             Vector2Int,
             Vector3,
             Vector3Int,
-            Vector4
+            Vector4,
+            None
         }
 
         private EditorDisplay[] _displayParameters;
@@ -72,7 +68,7 @@ namespace TestingWindow
         private string[] _names;
         private DisplayAs[] _displayAs;
 
-        public TestingCommandAttribute Init(ParameterInfo[] parameters)
+        public TestingCommandAttribute Init(ParameterInfo[] parameters, string commandName)
         {
             _displayParameters = new EditorDisplay[parameters.Length];
             _objects = new object[parameters.Length];
@@ -83,6 +79,8 @@ namespace TestingWindow
                 tryOverride = false;
             for (int i = 0; i < parameters.Length; i++)
             {
+                _parametersNames[i] = parameters[i].Name;
+
                 Type type = parameters[i].ParameterType;
                 if (!tryOverride || !TryOverride(parameters[i], i))
                 {
@@ -97,7 +95,7 @@ namespace TestingWindow
                     else if (type == typeof(double))
                         _displayParameters[i] = EditorDisplay.Double;
                     else if (type.IsEnum)
-                        _displayParameters[i] = EditorDisplay.EnumMask;
+                        _displayParameters[i] = EditorDisplay.EnumFlags;
                     else if (type == typeof(float))
                         _displayParameters[i] = EditorDisplay.Float;
                     else if (type == typeof(Gradient))
@@ -127,6 +125,11 @@ namespace TestingWindow
                         _displayParameters[i] = EditorDisplay.Object;
                         _unityTypes.Add(i, type);
                     }
+                    else
+                    {
+                        _displayParameters[i] = EditorDisplay.None;
+                        Debug.LogWarning($"Can't display \"{_parametersNames[i]}\" parameter of {commandName}");
+                    }
                 }
                 
                 _objects[i] = _displayParameters[i] switch
@@ -135,11 +138,10 @@ namespace TestingWindow
                     EditorDisplay.TextArea => string.Empty,
                     EditorDisplay.DelayedText => string.Empty,
                     EditorDisplay.EnumFlags => Enum.ToObject(type, 0),
-                    EditorDisplay.EnumMask => Enum.ToObject(type, 0),
                     EditorDisplay.Object => null,
+                    EditorDisplay.None => null,
                     _ => Activator.CreateInstance(type),
                 };
-                _parametersNames[i] = parameters[i].Name;
             }
 
             _names = null;
@@ -181,13 +183,6 @@ namespace TestingWindow
                                 return true;
                             }
                             return false;
-                        case DisplayAs.Flags:
-                            if (!type.IsEnum)
-                                return false;
-                            if (!type.IsDefined(typeof(FlagsAttribute)))
-                                return false;
-                            _displayParameters[parameterIndex] = EditorDisplay.EnumFlags;
-                            return true;
                         case DisplayAs.TextArea:
                             if (type != typeof(string))
                                 return false;
@@ -222,7 +217,7 @@ namespace TestingWindow
         }
     }
 
-    public partial class TestingWindow : EditorWindow
+    public class TestingWindow : EditorWindow
     {
         private static MethodInfo[] s_commands;
         private static TestingCommandAttribute[] s_attributes;
@@ -273,7 +268,7 @@ namespace TestingWindow
             s_attributes = new TestingCommandAttribute[s_commands.Length];
             for (int i = 0; i < s_commands.Length; i++)
                 s_attributes[i] = s_commands[i].GetCustomAttribute<TestingCommandAttribute>()
-                    .Init(parameters[i]);
+                    .Init(parameters[i], s_commands[i].Name);
 
             //Foldouts
             s_commandsFoldouts = new bool[s_commands.Length];
@@ -353,11 +348,6 @@ namespace TestingWindow
                             case TestingCommandAttribute.EditorDisplay.EnumFlags:
                                 objects[j] = EditorGUILayout.EnumFlagsField(names[j], (Enum)objects[j]);
                                 break;
-                            case TestingCommandAttribute.EditorDisplay.EnumMask:
-#pragma warning disable CS0618 //Obsolet
-                                objects[j] = EditorGUILayout.EnumMaskField(names[j], (Enum)objects[j]);
-#pragma warning restore CS0618
-                                break;
                             case TestingCommandAttribute.EditorDisplay.Float:
                                 objects[j] = EditorGUILayout.FloatField(names[j], (float)objects[j]);
                                 break;
@@ -399,9 +389,6 @@ namespace TestingWindow
                                 break;
                             case TestingCommandAttribute.EditorDisplay.Object:
                                 objects[j] = EditorGUILayout.ObjectField(names[j], (UnityEngine.Object)objects[j], unityTypes[j], true);
-                                break;
-                            default:
-                                Debug.LogWarning($"Can't display {names[j]} parameter of {s_commands[i].Name}");
                                 break;
                         }
                     }
@@ -494,6 +481,15 @@ namespace TestingWindow
 
         public static void StopTimer() =>
             s_stopwatch.Stop();
+    }
+
+    public static class TestingTimer
+    {
+        public static void Start() =>
+            TestingWindow.StartTimer();
+
+        public static void Stop() =>
+            TestingWindow.StopTimer();
     }
 }
 #endif

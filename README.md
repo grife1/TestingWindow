@@ -9,7 +9,7 @@ Just use `[TestingCommand]` attribute with some static method to be able to invo
 
 ```csharp
 using UnityEngine;
-using TestingWindow;
+using TW;
 
 public class SomeClass
 {
@@ -26,7 +26,7 @@ Be aware that the first calls may be slower
 ### Timer
 You can manually start and stop the timer where you need to
 ```csharp
-using TestingWindow;
+using TW;
 
 public class SomeClass
 {
@@ -58,10 +58,56 @@ public class SomeClass
 }
 ```
 
-## Supported types
-int, long, float, double, string, enum
+### DisplayAs attribute
+Multiline strings
+```csharp
+using TW;
 
-Unity's:
-Bounds, BoundsInt, Color, AnimationCurve, Gradient, Rect, RectInt, Vector2, Vector2Int, Vector3, Vector3Int, Vector4
+public class SomeClass
+{
+    [TestingCommand]
+    [DisplayAs("text", Display.TextArea)]
+    private static void StringTest(string text)
+    {
+
+    }
+}
+```
+<p align="left">
+  <img src="Images/Multiline.png">
+</p>
+
+Sliders
+```csharp
+using TW;
+
+public class SomeClass
+{
+    [TestingCommand]
+    [DisplayAs("value", 4, 6)]
+    private static void IntSlider(int value)
+    {
+
+    }
+
+    [TestingCommand]
+    [DisplayAs("value", -2f, 34.3f)]
+    private static void FloatSlider(float value)
+    {
+
+    }
+}
+```
+<p align="left">
+  <img src="Images/Sliders.png">
+</p>
+
+## Supported types
+AnimationCurve, Bounds, BoundsInt, Color, Gradient, Hash128, Quaternion, Rect,
+RectInt, Vector2, Vector2Int, Vector3, Vector3Int, Vector4, Matrix4x4, UnityEngine.Object,
+bool, byte, sbyte, short, ushort, int, uint, long, ulong, float, double, char, string
+
+Arrays and lists of all types above
 
 Types inherited from UnityEngine.Object
+Enums and enums with [Flags] attribute

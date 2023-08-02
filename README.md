@@ -109,5 +109,5 @@ bool, byte, sbyte, short, ushort, int, uint, long, ulong, float, double, char, s
 
 Arrays and lists of all types above
 
-Types inherited from UnityEngine.Object
-Enums and enums with [Flags] attribute
+Types inherited from UnityEngine.Object,
+enums and enums with [Flags] attribute

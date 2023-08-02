@@ -8,218 +8,384 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditor.AnimatedValues;
 
-namespace TestingWindow
+namespace TW
 {
-    public enum DisplayAs
+    public enum Display
     {
-        /// <summary>
-        /// Works with doubles, floats, ints, strings
-        /// <br/>
-        /// <see href="https://docs.unity3d.com/ScriptReference/EditorGUI.DelayedDoubleField.html"/>
-        /// </summary>
-        Delayed,
-        /// <summary>
-        /// Works with strings
-        /// </summary>
         TextArea
+    }
+
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class DisplayAsAttribute : Attribute
+    {
+        public readonly string ParameterName;
+        public readonly Display ParameterDisplay;
+        public readonly bool IsSlider = false;
+        public readonly bool IsFloatSlider = false;
+        public readonly (int, int) Int;
+        public readonly (float, float) Float;
+
+        /// <summary>
+        /// Display the parameter as text area or enum flags
+        /// </summary>
+        public DisplayAsAttribute(string parameterName, Display displayAs)
+        {
+            ParameterName = parameterName;
+            ParameterDisplay = displayAs;
+        }
+
+        /// <summary>
+        /// Display the parameter as int slider
+        /// </summary>
+        public DisplayAsAttribute(string parameterName, int minValue, int maxValue)
+        {
+            ParameterName = parameterName;
+            IsSlider = true;
+            Int = (minValue, maxValue);
+        }
+
+        /// <summary>
+        /// Display the parameter as float slider
+        /// </summary>
+        public DisplayAsAttribute(string parameterName, float minValue, float maxValue)
+        {
+            ParameterName = parameterName;
+            IsSlider = true;
+            IsFloatSlider = true;
+            Float = (minValue, maxValue);
+        }
     }
 
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class TestingCommandAttribute : Attribute
     {
-        public enum EditorDisplay
+        public sealed class ParameterData
         {
-            Bounds,
-            BoundsInt,
-            Color,
-            Curve,
-            DelayedDouble,
-            DelayedFloat,
-            DelayedInt,
-            DelayedText,
-            Double,
-            EnumFlags,
-            Float,
-            Gradient,
-            Int,
-            Long,
-            Object,
-            Rect,
-            RectInt,
-            Text,
-            TextArea,
-            Vector2,
-            Vector2Int,
-            Vector3,
-            Vector3Int,
-            Vector4,
-            None
+            public string Name;
+            public Type Type;
+            public object Object;
+            public EditorDisplay Display;
+            public (int, int) IntSliderData;
+            public (float, float) FloatSliderData;
         }
 
-        private EditorDisplay[] _displayParameters;
-        public EditorDisplay[] DisplayParameters { get { return _displayParameters; } }
-        private object[] _objects;
-        public object[] Objects { get { return _objects; } }
-        private string[] _parametersNames;
-        public string[] ParametersNames { get { return _parametersNames; } }
-        private Dictionary<int, Type> _unityTypes;
-        public Dictionary<int, Type> UnityTypes { get { return _unityTypes; } }
-
-        private string[] _names;
-        private DisplayAs[] _displayAs;
-
-        public TestingCommandAttribute Init(ParameterInfo[] parameters, string commandName)
+        public enum EditorDisplay
         {
-            _displayParameters = new EditorDisplay[parameters.Length];
-            _objects = new object[parameters.Length];
-            _parametersNames = new string[parameters.Length];
-            _unityTypes = new Dictionary<int, Type>();
+            None,
+            ObjectSubclass,
+            Property,
+            Enum,
+            EnumFlags,
+            TextArea,
+            IntSlider,
+            FloatSlider,
+            Array,
+            List
+        }
+
+        private ParameterData[] _data;
+        public ParameterData[] Data { get { return _data; } }
+
+        private DisplayAsAttribute[] _displayAs;
+
+        public TestingCommandAttribute Init(ParameterInfo[] parameters, Attribute[] displayAsArray)
+        {
+            _displayAs = new DisplayAsAttribute[displayAsArray.Length];
+            for (int i = 0; i < _displayAs.Length; i++)
+                _displayAs[i] = (DisplayAsAttribute)displayAsArray[i];
+            return Init(parameters);
+        }
+
+        public TestingCommandAttribute Init(ParameterInfo[] parameters)
+        {
+            _data = new ParameterData[parameters.Length];
+
             bool tryOverride = true;
-            if (_names is null)
+            if (_displayAs is null)
                 tryOverride = false;
             for (int i = 0; i < parameters.Length; i++)
             {
-                _parametersNames[i] = parameters[i].Name;
-
                 Type type = parameters[i].ParameterType;
+                _data[i] = new()
+                {
+                    Name = parameters[i].Name,
+                    Type = type
+                };
+
                 if (!tryOverride || !TryOverride(parameters[i], i))
                 {
-                    if (type == typeof(Bounds))
-                        _displayParameters[i] = EditorDisplay.Bounds;
-                    else if (type == typeof(BoundsInt))
-                        _displayParameters[i] = EditorDisplay.BoundsInt;
-                    else if (type == typeof(Color))
-                        _displayParameters[i] = EditorDisplay.Color;
-                    else if (type == typeof(AnimationCurve))
-                        _displayParameters[i] = EditorDisplay.Curve;
-                    else if (type == typeof(double))
-                        _displayParameters[i] = EditorDisplay.Double;
+                    EditorDisplay ed = EditorDisplay.None;
+                    if (type.IsSubclassOf(typeof(UnityEngine.Object)))
+                        ed = EditorDisplay.ObjectSubclass;
                     else if (type.IsEnum)
-                        _displayParameters[i] = EditorDisplay.EnumFlags;
-                    else if (type == typeof(float))
-                        _displayParameters[i] = EditorDisplay.Float;
-                    else if (type == typeof(Gradient))
-                        _displayParameters[i] = EditorDisplay.Gradient;
-                    else if (type == typeof(int))
-                        _displayParameters[i] = EditorDisplay.Int;
-                    else if (type == typeof(long))
-                        _displayParameters[i] = EditorDisplay.Long;
-                    else if (type == typeof(Rect))
-                        _displayParameters[i] = EditorDisplay.Rect;
-                    else if (type == typeof(RectInt))
-                        _displayParameters[i] = EditorDisplay.RectInt;
-                    else if (type == typeof(string))
-                        _displayParameters[i] = EditorDisplay.Text;
-                    else if (type == typeof(Vector2))
-                        _displayParameters[i] = EditorDisplay.Vector2;
-                    else if (type == typeof(Vector2Int))
-                        _displayParameters[i] = EditorDisplay.Vector2Int;
-                    else if (type == typeof(Vector3))
-                        _displayParameters[i] = EditorDisplay.Vector3;
-                    else if (type == typeof(Vector3Int))
-                        _displayParameters[i] = EditorDisplay.Vector3Int;
-                    else if (type == typeof(Vector4))
-                        _displayParameters[i] = EditorDisplay.Vector4;
-                    else if (type.IsSubclassOf(typeof(UnityEngine.Object)))
-                    {
-                        _displayParameters[i] = EditorDisplay.Object;
-                        _unityTypes.Add(i, type);
-                    }
-                    else
-                    {
-                        _displayParameters[i] = EditorDisplay.None;
-                        Debug.LogWarning($"Can't display \"{_parametersNames[i]}\" parameter of {commandName}");
-                    }
+                        if (type.IsDefined(typeof(FlagsAttribute)))
+                            ed = EditorDisplay.EnumFlags;
+                        else
+                            ed = EditorDisplay.Enum;
+                    else if (IsSupportedProperty(type))
+                        ed = EditorDisplay.Property;
+                    else if (IsSupportedArray(type))
+                        ed = EditorDisplay.Array;
+                    else if (IsSupportedList(type))
+                        ed = EditorDisplay.List;
+                    _data[i].Display = ed;
                 }
-                
-                _objects[i] = _displayParameters[i] switch
-                {
-                    EditorDisplay.Text => string.Empty,
-                    EditorDisplay.TextArea => string.Empty,
-                    EditorDisplay.DelayedText => string.Empty,
-                    EditorDisplay.EnumFlags => Enum.ToObject(type, 0),
-                    EditorDisplay.Object => null,
-                    EditorDisplay.None => null,
-                    _ => Activator.CreateInstance(type),
-                };
+                EditorDisplay display = _data[i].Display;
+
+                object o;
+                if (type == typeof(string))
+                    o = string.Empty;
+                else if (type.IsEnum)
+                    o = Enum.ToObject(type, 0);
+                else if (display == EditorDisplay.ObjectSubclass ||
+                    type == typeof(UnityEngine.Object))
+                    o = null;
+                else if (display == EditorDisplay.None)
+                    o = null;
+                else if (display == EditorDisplay.Array)
+                    o = null;
+                else if (display == EditorDisplay.List)
+                    o = null;
+                else
+                    o = Activator.CreateInstance(type);
+                _data[i].Object = o;
             }
 
-            _names = null;
             _displayAs = null;
             return this;
+        }
+
+        private static bool IsSupportedProperty(Type type)
+        {
+            if (type == typeof(AnimationCurve) ||
+                type == typeof(Bounds) ||
+                type == typeof(BoundsInt) ||
+                type == typeof(Color) ||
+                type == typeof(Gradient) ||
+                type == typeof(Hash128) ||
+                type == typeof(Quaternion) ||
+                type == typeof(Rect) ||
+                type == typeof(RectInt) ||
+                type == typeof(Vector2) ||
+                type == typeof(Vector2Int) ||
+                type == typeof(Vector3) ||
+                type == typeof(Vector3Int) ||
+                type == typeof(Vector4) ||
+                type == typeof(Matrix4x4) ||
+                (type.IsPrimitive && type != typeof(IntPtr) && type != typeof(UIntPtr)) ||
+                type == typeof(string) ||
+                type == typeof(UnityEngine.Object))
+                return true;
+            return false;     
+        }
+
+        private static bool IsSupportedArray(Type type)
+        {
+            if (type.IsArray && type.GetArrayRank() == 1 &&
+                IsSupportedProperty(type.GetElementType()))
+                return true;
+            return false;
+        }
+
+        private static bool IsSupportedList(Type type)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) &&
+                IsSupportedProperty(type.GetGenericArguments()[0]))
+                return true;
+            return false;
         }
 
         private bool TryOverride(ParameterInfo parameter, int parameterIndex)
         {
             string name = parameter.Name;
-            for (int i = 0; i < _names.Length; i++)
+            for (int i = 0; i < _displayAs.Length; i++)
             {
-                if (name == _names[i])
+                if (name == _displayAs[i].ParameterName)
                 {
-                    if (_displayAs.Length <= i)
-                        return false;
                     Type type = parameter.ParameterType;
-                    switch (_displayAs[i])
+                    if (_displayAs[i].IsSlider)
                     {
-                        case DisplayAs.Delayed:
-                            if (type == typeof(double))
+                        if (_displayAs[i].IsFloatSlider)
+                        {
+                            if (type == typeof(float))
                             {
-                                _displayParameters[parameterIndex] = EditorDisplay.DelayedDouble;
-                                return true;
-                            }
-                            else if (type == typeof(float))
-                            {
-                                _displayParameters[parameterIndex] = EditorDisplay.DelayedFloat;
-                                return true;
-                            }
-                            else if (type == typeof(int))
-                            {
-                                _displayParameters[parameterIndex] = EditorDisplay.DelayedInt;
-                                return true;
-                            }
-                            else if (type == typeof(string))
-                            {
-                                _displayParameters[parameterIndex] = EditorDisplay.DelayedText;
+                                _data[parameterIndex].Display = EditorDisplay.FloatSlider;
+                                _data[parameterIndex].FloatSliderData = _displayAs[i].Float;
                                 return true;
                             }
                             return false;
-                        case DisplayAs.TextArea:
-                            if (type != typeof(string))
-                                return false;
-                            _displayParameters[parameterIndex] = EditorDisplay.TextArea;
+                        }
+                        else
+                        {
+                            if (type == typeof(int))
+                            {
+                                _data[parameterIndex].Display = EditorDisplay.IntSlider;
+                                _data[parameterIndex].IntSliderData = _displayAs[i].Int;
+                                return true;
+                            }
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        //Only TextArea exists
+                        if (type == typeof(string))
+                        {
+                            _data[parameterIndex].Display = EditorDisplay.TextArea;
                             return true;
-                        default:
-                            return false;
+                        }
+                        return false;
                     }
                 }
             }
             return false;
         }
-
-        public TestingCommandAttribute()
-        {
-            
-        }
-
-        /// <summary>
-        /// <example>
-        /// Tells unity how to display method's parameters
-        /// <code>
-        /// [TestingCommand(new string[] { "second", "fourth" }, new DisplayAs[] { DisplayAs.Delayed, DisplayAs.TextArea })]
-        /// public static void Test(string first, int second, bool third, string fourth) {}
-        /// </code>
-        /// </example>
-        /// </summary>
-        public TestingCommandAttribute(string[] parametersNames, DisplayAs[] parametersDisplay)
-        {
-            _names = parametersNames;
-            _displayAs = parametersDisplay;
-        }
     }
 
     public class TestingWindow : EditorWindow
     {
+        private class Container : ScriptableObject
+        {
+            private FieldInfo[] _fields;
+
+            public void Init() =>
+                _fields = GetType().GetFields();
+
+            public string GetFieldName(Type type)
+            {
+                for (int i = 0; i < _fields.Length; i++)
+                    if (_fields[i].FieldType == type)
+                        return _fields[i].Name;
+                return string.Empty;
+            }
+
+            public void Set(object obj, Type type)
+            {
+                for (int i = 0; i < _fields.Length; i++)
+                    if (_fields[i].FieldType == type)
+                    {
+                        _fields[i].SetValue(this, obj);
+                        return;
+                    }
+            }
+
+            public object Get(Type type)
+            {
+                for (int i = 0; i < _fields.Length; i++)
+                    if (_fields[i].FieldType == type)
+                        return _fields[i].GetValue(this);
+                return null;
+            }
+        }
+
+        private class PropertyContainer : Container
+        {
+            public AnimationCurve Curve;
+            public Bounds Bounds;
+            public BoundsInt BoundsInt;
+            public Color Color;
+            public Gradient Gradient;
+            public Hash128 Hash;
+            public Quaternion Quaternion;
+            public Rect Rect;
+            public RectInt RectInt;
+            public Vector2 Vector2;
+            public Vector2Int Vector2Int;
+            public Vector3 Vector3;
+            public Vector3Int Vector3Int;
+            public Vector4 Vector4;
+            public Matrix4x4 Matrix4x4;
+            public UnityEngine.Object Object;
+            public bool Bool;
+            public byte Byte;
+            public sbyte SByte;
+            public short Short;
+            public ushort UShort;
+            public int Int;
+            public uint UInt;
+            public long Long;
+            public ulong ULong;
+            public float Float;
+            public double Double;
+            public char Char;
+            public string String;
+        }
+
+        private class ArrayContainer : Container
+        {
+            public AnimationCurve[] Curve;
+            public Bounds[] Bounds;
+            public BoundsInt[] BoundsInt;
+            public Color[] Color;
+            public Gradient[] Gradient;
+            public Hash128[] Hash;
+            public Quaternion[] Quaternion;
+            public Rect[] Rect;
+            public RectInt[] RectInt;
+            public Vector2[] Vector2;
+            public Vector2Int[] Vector2Int;
+            public Vector3[] Vector3;
+            public Vector3Int[] Vector3Int;
+            public Vector4[] Vector4;
+            public Matrix4x4[] Matrix4x4;
+            public UnityEngine.Object[] Object;
+            public bool[] Bool;
+            public byte[] Byte;
+            public sbyte[] SByte;
+            public short[] Short;
+            public ushort[] UShort;
+            public int[] Int;
+            public uint[] UInt;
+            public long[] Long;
+            public ulong[] ULong;
+            public float[] Float;
+            public double[] Double;
+            public char[] Char;
+            public string[] String;
+        }
+
+        private class ListContainer : Container
+        {
+            public List<AnimationCurve> Curve;
+            public List<Bounds> Bounds;
+            public List<BoundsInt> BoundsInt;
+            public List<Color> Color;
+            public List<Gradient> Gradient;
+            public List<Hash128> Hash;
+            public List<Quaternion> Quaternion;
+            public List<Rect> Rect;
+            public List<RectInt> RectInt;
+            public List<Vector2> Vector2;
+            public List<Vector2Int> Vector2Int;
+            public List<Vector3> Vector3;
+            public List<Vector3Int> Vector3Int;
+            public List<Vector4> Vector4;
+            public List<Matrix4x4> Matrix4x4;
+            public List<UnityEngine.Object> Object;
+            public List<bool> Bool;
+            public List<byte> Byte;
+            public List<sbyte> SByte;
+            public List<short> Short;
+            public List<ushort> UShort;
+            public List<int> Int;
+            public List<uint> UInt;
+            public List<long> Long;
+            public List<ulong> ULong;
+            public List<float> Float;
+            public List<double> Double;
+            public List<char> Char;
+            public List<string> String;
+        }
+
+        private static PropertyContainer s_container;
+        private static SerializedObject s_so;
+        private static ArrayContainer s_arrayContainer;
+        private static SerializedObject s_soArray;
+        private static ListContainer s_listContainer;
+        private static SerializedObject s_soList;
+
         private static MethodInfo[] s_commands;
+        private static string[] s_names;
         private static TestingCommandAttribute[] s_attributes;
         private static bool s_isInitialized = false;
         private static bool s_areCommandsFound = false;
@@ -228,7 +394,7 @@ namespace TestingWindow
         private static string[] s_historyNames = new string[0];
         private static float[] s_historyTimes = new float[0];
 
-        private static System.Diagnostics.Stopwatch s_stopwatch = new();
+        private static readonly System.Diagnostics.Stopwatch s_stopwatch = new();
 
         [MenuItem("Window/TestingWindow")]
         private static void Init()
@@ -243,6 +409,16 @@ namespace TestingWindow
 
             s_historyFadeValue = new(false);
             s_historyFadeValue.valueChanged.AddListener(Repaint);
+
+            s_container = CreateInstance<PropertyContainer>();
+            s_container.Init();
+            s_so = new(s_container);
+            s_arrayContainer = CreateInstance<ArrayContainer>();
+            s_arrayContainer.Init();
+            s_soArray = new(s_arrayContainer);
+            s_listContainer = CreateInstance<ListContainer>();
+            s_listContainer.Init();
+            s_soList = new(s_listContainer);
 
             FindCommands();
         }
@@ -259,6 +435,11 @@ namespace TestingWindow
                 .Where(m => m.IsDefined(typeof(TestingCommandAttribute))))).ToArray();
             });
 
+            //Names
+            s_names = new string[s_commands.Length];
+            for (int i = 0; i < s_commands.Length; i++)
+                s_names[i] = s_commands[i].Name;
+
             //Parameters
             ParameterInfo[][] parameters = new ParameterInfo[s_commands.Length][];
             for (int i = 0; i < s_commands.Length; i++)
@@ -267,8 +448,15 @@ namespace TestingWindow
             //Attributes
             s_attributes = new TestingCommandAttribute[s_commands.Length];
             for (int i = 0; i < s_commands.Length; i++)
-                s_attributes[i] = s_commands[i].GetCustomAttribute<TestingCommandAttribute>()
-                    .Init(parameters[i], s_commands[i].Name);
+            {
+                MethodInfo method = s_commands[i];
+                TestingCommandAttribute tca = s_commands[i].GetCustomAttribute<TestingCommandAttribute>();
+                if (method.IsDefined(typeof(DisplayAsAttribute)))
+                    tca.Init(parameters[i], method.GetCustomAttributes(typeof(DisplayAsAttribute)).ToArray());
+                else
+                    tca.Init(parameters[i]);
+                s_attributes[i] = tca;
+            }
 
             //Foldouts
             s_commandsFoldouts = new bool[s_commands.Length];
@@ -289,6 +477,13 @@ namespace TestingWindow
                 fontSize = 20,
                 fontStyle = FontStyle.Bold
             };
+            GUIStyle commandStyle = new(EditorStyles.foldoutHeader)
+            {
+                fontSize = 15,
+                fontStyle = FontStyle.Bold
+            };
+            GUIStyle redStyle = new(GUI.skin.label);
+            redStyle.normal.textColor = Color.red;
 
             //Wait for commands
             if (!s_areCommandsFound)
@@ -303,101 +498,79 @@ namespace TestingWindow
             for (int i = 0; i < s_commands.Length; i++)
             {
                 bool foldout = s_commandsFoldouts[i];
-                foldout = EditorGUILayout.BeginFoldoutHeaderGroup(foldout, s_commands[i].Name);
+                foldout = EditorGUILayout.Foldout(foldout, s_names[i], commandStyle);
                 s_commandsFoldouts[i] = foldout;
                 if (foldout)
                 {
                     TestingCommandAttribute attribute = s_attributes[i];
-                    string[] names = attribute.ParametersNames;
-                    TestingCommandAttribute.EditorDisplay[] displays = attribute.DisplayParameters;
-                    object[] objects = attribute.Objects;
-                    Dictionary<int, Type> unityTypes = attribute.UnityTypes;
+                    TestingCommandAttribute.ParameterData[] data = attribute.Data;
 
                     //Display parameters
-                    for (int j = 0; j < names.Length; j++)
+                    bool canRun = true;
+                    for (int j = 0; j < data.Length; j++)
                     {
-                        switch (displays[j])
+                        switch (data[j].Display)
                         {
-                            case TestingCommandAttribute.EditorDisplay.Bounds:
-                                objects[j] = EditorGUILayout.BoundsField(names[j], (Bounds)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.BoundsInt:
-                                objects[j] = EditorGUILayout.BoundsIntField(names[j], (BoundsInt)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Color:
-                                objects[j] = EditorGUILayout.ColorField(names[j], (Color)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Curve:
-                                objects[j] = EditorGUILayout.CurveField(names[j], (AnimationCurve)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.DelayedDouble:
-                                objects[j] = EditorGUILayout.DelayedDoubleField(names[j], (double)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.DelayedFloat:
-                                objects[j] = EditorGUILayout.DelayedFloatField(names[j], (float)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.DelayedInt:
-                                objects[j] = EditorGUILayout.DelayedIntField(names[j], (int)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.DelayedText:
-                                objects[j] = EditorGUILayout.DelayedTextField(names[j], (string)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Double:
-                                objects[j] = EditorGUILayout.DoubleField(names[j], (double)objects[j]);
+                            case TestingCommandAttribute.EditorDisplay.Enum:
+                                data[j].Object = EditorGUILayout.EnumPopup(data[j].Name, (Enum)data[j].Object);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.EnumFlags:
-                                objects[j] = EditorGUILayout.EnumFlagsField(names[j], (Enum)objects[j]);
+                                data[j].Object = EditorGUILayout.EnumFlagsField(data[j].Name, (Enum)data[j].Object);
                                 break;
-                            case TestingCommandAttribute.EditorDisplay.Float:
-                                objects[j] = EditorGUILayout.FloatField(names[j], (float)objects[j]);
+                            case TestingCommandAttribute.EditorDisplay.FloatSlider:
+                                data[j].Object = EditorGUILayout.Slider(data[j].Name, (float)data[j].Object, data[j].FloatSliderData.Item1, data[j].FloatSliderData.Item2);
                                 break;
-                            case TestingCommandAttribute.EditorDisplay.Gradient:
-                                objects[j] = EditorGUILayout.GradientField(names[j], (Gradient)objects[j]);
+                            case TestingCommandAttribute.EditorDisplay.IntSlider:
+                                data[j].Object = EditorGUILayout.IntSlider(data[j].Name, (int)data[j].Object, data[j].IntSliderData.Item1, data[j].IntSliderData.Item2);
                                 break;
-                            case TestingCommandAttribute.EditorDisplay.Int:
-                                objects[j] = EditorGUILayout.IntField(names[j], (int)objects[j]);
+                            case TestingCommandAttribute.EditorDisplay.None:
+                                GUILayout.Label($"Can't display \"{data[j].Name}\" parameter", redStyle);
+                                canRun = false;
                                 break;
-                            case TestingCommandAttribute.EditorDisplay.Long:
-                                objects[j] = EditorGUILayout.LongField(names[j], (long)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Rect:
-                                objects[j] = EditorGUILayout.RectField(names[j], (Rect)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.RectInt:
-                                objects[j] = EditorGUILayout.RectIntField(names[j], (RectInt)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Text:
-                                objects[j] = EditorGUILayout.TextField(names[j], (string)objects[j]);
+                            case TestingCommandAttribute.EditorDisplay.ObjectSubclass:
+                                data[j].Object = EditorGUILayout.ObjectField(data[j].Name, (UnityEngine.Object)data[j].Object, data[j].Type, true);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.TextArea:
-                                objects[j] = EditorGUILayout.TextArea((string)objects[j]);
+                                GUILayout.Label(data[j].Name);
+                                data[j].Object = EditorGUILayout.TextArea((string)data[j].Object);
                                 break;
-                            case TestingCommandAttribute.EditorDisplay.Vector2:
-                                objects[j] = EditorGUILayout.Vector2Field(names[j], (Vector2)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Vector2Int:
-                                objects[j] = EditorGUILayout.Vector2IntField(names[j], (Vector2Int)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Vector3:
-                                objects[j] = EditorGUILayout.Vector3Field(names[j], (Vector3)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Vector3Int:
-                                objects[j] = EditorGUILayout.Vector3IntField(names[j], (Vector3Int)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Vector4:
-                                objects[j] = EditorGUILayout.Vector4Field(names[j], (Vector4)objects[j]);
-                                break;
-                            case TestingCommandAttribute.EditorDisplay.Object:
-                                objects[j] = EditorGUILayout.ObjectField(names[j], (UnityEngine.Object)objects[j], unityTypes[j], true);
+                            default: //Property || Array || List
+                                Type type = data[j].Type;
+                                Container c = null;
+                                SerializedObject so = null;
+                                switch (data[j].Display)
+                                {
+                                    case TestingCommandAttribute.EditorDisplay.Property:
+                                        c = s_container;
+                                        so = s_so;
+                                        break;
+                                    case TestingCommandAttribute.EditorDisplay.Array:
+                                        c = s_arrayContainer;
+                                        so = s_soArray;
+                                        break;
+                                    case TestingCommandAttribute.EditorDisplay.List:
+                                        c = s_listContainer;
+                                        so = s_soList;
+                                        break;
+                                }
+                                c.Set(data[j].Object, type);
+                                SerializedProperty prop = so.FindProperty(c.GetFieldName(type));
+                                so.Update();
+                                EditorGUILayout.PropertyField(prop, new GUIContent(data[j].Name));
+                                so.ApplyModifiedProperties();
+                                data[j].Object = c.Get(type);
                                 break;
                         }
                     }
 
-                    if (GUILayout.Button("Run"))
-                        RunCommand(i);
+                    if (canRun)
+                    {
+                        if (GUILayout.Button("Run"))
+                            RunCommand(i);
+                    }
+                    else
+                        GUILayout.Label("Replace all unsupported parameters with supported ones to run", redStyle);
                 }
-
-                EditorGUILayout.EndFoldoutHeaderGroup();
             }
             GUILayout.EndScrollView();
             GUILayout.EndArea();
@@ -470,8 +643,12 @@ namespace TestingWindow
 
         private static void RunCommand(int index)
         {
+            TestingCommandAttribute.ParameterData[] data = s_attributes[index].Data;
+            object[] objects = new object[data.Length];
+            for (int i = 0; i < data.Length; i++)
+                objects[i] = data[i].Object;
             s_stopwatch.Restart();
-            s_commands[index].Invoke(null, s_attributes[index].Objects);
+            s_commands[index].Invoke(null, objects);
             s_stopwatch.Stop();
             PushHistory(s_commands[index].Name, (float)s_stopwatch.Elapsed.TotalMilliseconds);
         }

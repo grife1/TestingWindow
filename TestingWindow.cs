@@ -15,7 +15,7 @@ namespace TW
         TextArea
     }
 
-    [AttributeUsage(AttributeTargets.Method)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
     public sealed class DisplayAsAttribute : Attribute
     {
         public readonly string ParameterName;

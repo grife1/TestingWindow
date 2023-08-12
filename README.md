@@ -102,6 +102,23 @@ public class SomeClass
   <img src="Images/Sliders.png">
 </p>
 
+Path <br>
+Allows you to use windows explorer to select a file/folder
+```csharp
+using TW;
+
+public class SomeClass
+{
+    [TestingCommand]
+    [DisplayAs("filePath", Display.PathFile)]
+    [DisplayAs("directoryPath", Display.PathDirectory)]
+    private static void Path(string filePath, string directoryPath)
+    {
+
+    }
+}
+```
+
 ## Supported types
 AnimationCurve, Bounds, BoundsInt, Color, Gradient, Hash128, Quaternion, Rect,
 RectInt, Vector2, Vector2Int, Vector3, Vector3Int, Vector4, Matrix4x4, UnityEngine.Object,

@@ -10,9 +10,12 @@ using UnityEditor.AnimatedValues;
 
 namespace TW
 {
+    #region DisplayAs
     public enum Display
     {
-        TextArea
+        TextArea,
+        PathFile,
+        PathDirectory
     }
 
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
@@ -26,7 +29,7 @@ namespace TW
         public readonly (float, float) Float;
 
         /// <summary>
-        /// Display the parameter as text area or enum flags
+        /// Display the parameter as
         /// </summary>
         public DisplayAsAttribute(string parameterName, Display displayAs)
         {
@@ -55,6 +58,7 @@ namespace TW
             Float = (minValue, maxValue);
         }
     }
+    #endregion
 
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class TestingCommandAttribute : Attribute
@@ -80,7 +84,9 @@ namespace TW
             IntSlider,
             FloatSlider,
             Array,
-            List
+            List,
+            PathFile,
+            PathDirectory
         }
 
         private ParameterData[] _data;
@@ -112,26 +118,27 @@ namespace TW
                     Type = type
                 };
 
-                if (!tryOverride || !TryOverride(parameters[i], i))
+                if (!tryOverride || !TryOverride(parameters[i], _data[i]))
                 {
                     EditorDisplay ed = EditorDisplay.None;
-                    if (type.IsSubclassOf(typeof(UnityEngine.Object)))
+                    if (type.IsSubclassOf(typeof(UnityEngine.Object)))  //Unity Subclass
                         ed = EditorDisplay.ObjectSubclass;
-                    else if (type.IsEnum)
-                        if (type.IsDefined(typeof(FlagsAttribute)))
+                    else if (type.IsEnum)                               //Enum
+                        if (type.IsDefined(typeof(FlagsAttribute)))     //Flags
                             ed = EditorDisplay.EnumFlags;
-                        else
+                        else                                            //Not Flags
                             ed = EditorDisplay.Enum;
-                    else if (IsSupportedProperty(type))
+                    else if (IsSupportedProperty(type))                 //EditorGUILayout.PropertyField
                         ed = EditorDisplay.Property;
-                    else if (IsSupportedArray(type))
+                    else if (IsSupportedArray(type))                    //Array
                         ed = EditorDisplay.Array;
-                    else if (IsSupportedList(type))
+                    else if (IsSupportedList(type))                     //List
                         ed = EditorDisplay.List;
                     _data[i].Display = ed;
                 }
                 EditorDisplay display = _data[i].Display;
 
+                //Create Boxed Value
                 object o;
                 if (type == typeof(string))
                     o = string.Empty;
@@ -195,7 +202,7 @@ namespace TW
             return false;
         }
 
-        private bool TryOverride(ParameterInfo parameter, int parameterIndex)
+        private bool TryOverride(ParameterInfo parameter, ParameterData data)
         {
             string name = parameter.Name;
             for (int i = 0; i < _displayAs.Length; i++)
@@ -209,33 +216,36 @@ namespace TW
                         {
                             if (type == typeof(float))
                             {
-                                _data[parameterIndex].Display = EditorDisplay.FloatSlider;
-                                _data[parameterIndex].FloatSliderData = _displayAs[i].Float;
+                                data.Display = EditorDisplay.FloatSlider;
+                                data.FloatSliderData = _displayAs[i].Float;
                                 return true;
                             }
-                            return false;
                         }
-                        else
+                        else //IntSlider
                         {
                             if (type == typeof(int))
                             {
-                                _data[parameterIndex].Display = EditorDisplay.IntSlider;
-                                _data[parameterIndex].IntSliderData = _displayAs[i].Int;
+                                data.Display = EditorDisplay.IntSlider;
+                                data.IntSliderData = _displayAs[i].Int;
                                 return true;
                             }
-                            return false;
                         }
                     }
-                    else
+                    else //NotSlider
                     {
-                        //Only TextArea exists
                         if (type == typeof(string))
                         {
-                            _data[parameterIndex].Display = EditorDisplay.TextArea;
+                            data.Display = _displayAs[i].ParameterDisplay switch
+                            {
+                                Display.TextArea => EditorDisplay.TextArea,
+                                Display.PathFile => EditorDisplay.PathFile,
+                                Display.PathDirectory => EditorDisplay.PathDirectory,
+                                _ => EditorDisplay.None
+                            };
                             return true;
                         }
-                        return false;
                     }
+                    return false;
                 }
             }
             return false;
@@ -509,36 +519,63 @@ namespace TW
                     bool canRun = true;
                     for (int j = 0; j < data.Length; j++)
                     {
-                        switch (data[j].Display)
+                        TestingCommandAttribute.ParameterData currentData = data[j];
+                        ref object ob = ref currentData.Object;
+                        string name = currentData.Name;
+                        Type type = currentData.Type;
+                        switch (currentData.Display)
                         {
                             case TestingCommandAttribute.EditorDisplay.Enum:
-                                data[j].Object = EditorGUILayout.EnumPopup(data[j].Name, (Enum)data[j].Object);
+                                ob = EditorGUILayout.EnumPopup(name, (Enum)ob);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.EnumFlags:
-                                data[j].Object = EditorGUILayout.EnumFlagsField(data[j].Name, (Enum)data[j].Object);
+                                ob = EditorGUILayout.EnumFlagsField(name, (Enum)ob);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.FloatSlider:
-                                data[j].Object = EditorGUILayout.Slider(data[j].Name, (float)data[j].Object, data[j].FloatSliderData.Item1, data[j].FloatSliderData.Item2);
+                                ob = EditorGUILayout.Slider(name, (float)ob, currentData.FloatSliderData.Item1, currentData.FloatSliderData.Item2);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.IntSlider:
-                                data[j].Object = EditorGUILayout.IntSlider(data[j].Name, (int)data[j].Object, data[j].IntSliderData.Item1, data[j].IntSliderData.Item2);
+                                ob = EditorGUILayout.IntSlider(name, (int)ob, data[j].IntSliderData.Item1, currentData.IntSliderData.Item2);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.None:
-                                GUILayout.Label($"Can't display \"{data[j].Name}\" parameter", redStyle);
+                                GUILayout.Label($"Can't display \"{name}\" parameter", redStyle);
                                 canRun = false;
                                 break;
                             case TestingCommandAttribute.EditorDisplay.ObjectSubclass:
-                                data[j].Object = EditorGUILayout.ObjectField(data[j].Name, (UnityEngine.Object)data[j].Object, data[j].Type, true);
+                                ob = EditorGUILayout.ObjectField(name, (UnityEngine.Object)ob, type, true);
                                 break;
                             case TestingCommandAttribute.EditorDisplay.TextArea:
                                 GUILayout.Label(data[j].Name);
-                                data[j].Object = EditorGUILayout.TextArea((string)data[j].Object);
+                                ob = EditorGUILayout.TextArea((string)ob);
+                                break;
+                            case TestingCommandAttribute.EditorDisplay.PathFile:
+                                GUILayout.Label(data[j].Name);
+                                GUILayout.BeginHorizontal();
+                                ob = EditorGUILayout.TextField((string)ob);
+                                if (GUILayout.Button("Browse"))
+                                {
+                                    string path = EditorUtility.OpenFilePanelWithFilters(name, string.Empty, new string[] { });
+                                    if (!string.IsNullOrEmpty(path))
+                                        ob = path;
+                                }
+                                GUILayout.EndHorizontal();
+                                break;
+                            case TestingCommandAttribute.EditorDisplay.PathDirectory:
+                                GUILayout.Label(name);
+                                GUILayout.BeginHorizontal();
+                                ob = EditorGUILayout.TextField((string)ob);
+                                if (GUILayout.Button("Browse"))
+                                {
+                                    string path = EditorUtility.OpenFolderPanel(name, string.Empty, string.Empty);
+                                    if (!string.IsNullOrEmpty(path))
+                                        ob = path;
+                                }
+                                GUILayout.EndHorizontal();
                                 break;
                             default: //Property || Array || List
-                                Type type = data[j].Type;
                                 Container c = null;
                                 SerializedObject so = null;
-                                switch (data[j].Display)
+                                switch (currentData.Display)
                                 {
                                     case TestingCommandAttribute.EditorDisplay.Property:
                                         c = s_container;
@@ -553,12 +590,12 @@ namespace TW
                                         so = s_soList;
                                         break;
                                 }
-                                c.Set(data[j].Object, type);
+                                c.Set(ob, type);
                                 SerializedProperty prop = so.FindProperty(c.GetFieldName(type));
                                 so.Update();
-                                EditorGUILayout.PropertyField(prop, new GUIContent(data[j].Name));
+                                EditorGUILayout.PropertyField(prop, new GUIContent(name));
                                 so.ApplyModifiedProperties();
-                                data[j].Object = c.Get(type);
+                                ob = c.Get(type);
                                 break;
                         }
                     }
